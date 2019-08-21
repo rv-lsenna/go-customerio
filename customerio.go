@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strconv"
@@ -13,10 +14,11 @@ import (
 
 // CustomerIO wraps the customer.io API, see: http://customer.io/docs/api/rest.html
 type CustomerIO struct {
-	siteID string
-	apiKey string
-	Host   string
-	SSL    bool
+	siteID   string
+	apiKey   string
+	Host     string
+	HostBeta string
+	SSL      bool
 }
 
 // CustomerIOError is returned by any method that fails at the API level
@@ -32,7 +34,7 @@ func (e *CustomerIOError) Error() string {
 
 // NewCustomerIO creates a new CustomerIO object to perform requests on the supplied credentials
 func NewCustomerIO(siteID, apiKey string) *CustomerIO {
-	return &CustomerIO{siteID, apiKey, "track.customer.io", true}
+	return &CustomerIO{siteID, apiKey, "track.customer.io", "beta-api.customer.io", true}
 }
 
 // Identify identifies a customer and sets their attributes
@@ -202,6 +204,24 @@ func (c *CustomerIO) RemoveCustomersFromSegment(segmentID int, customerIDs []str
 	return nil
 }
 
+func (c *CustomerIO) BetaCustomerAttributes(customerID string) (map[string]string, error) {
+	var data customerAttributes
+
+	status, responseBody, err := c.request("GET", c.customerAttributesURL(customerID), []byte{})
+	if err != nil {
+		return map[string]string{}, err
+	} else if status != 200 {
+		return map[string]string{}, &CustomerIOError{status, c.customerAttributesURL(customerID), responseBody}
+	}
+
+	err = json.Unmarshal(responseBody, &data)
+	if err != nil {
+		return map[string]string{}, err
+	}
+
+	return data.Customer.Attributes, nil
+}
+
 func (c *CustomerIO) auth() string {
 	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v:%v", c.siteID, c.apiKey)))
 }
@@ -241,6 +261,10 @@ func (c *CustomerIO) removeCustomersFromManualSegmentURL(segmentID int) string {
 	return c.protocol() + path.Join(c.Host, "api/v1/", "segments", strconv.Itoa(segmentID), "remove_customers")
 }
 
+func (c *CustomerIO) customerAttributesURL(customerID string) string {
+	return c.protocol() + path.Join(c.HostBeta, "v1/api/", "customers", customerID, "attributes")
+}
+
 func (c *CustomerIO) request(method, url string, body []byte) (status int, responseBody []byte, err error) {
 
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(body))
@@ -257,10 +281,34 @@ func (c *CustomerIO) request(method, url string, body []byte) (status int, respo
 	}
 	defer resp.Body.Close()
 	status = resp.StatusCode
+
 	if resp.ContentLength >= 0 {
 		responseBody = make([]byte, resp.ContentLength)
 		resp.Body.Read(responseBody)
+	} else {
+		var buf [1]byte
+		responseBody = make([]byte, 0)
+		for true {
+			_, err = resp.Body.Read(buf[:])
+			if err == io.EOF {
+				responseBody = append(responseBody, buf[0])
+				break
+			} else if err != nil {
+				return 0, nil, err
+			}
+			responseBody = append(responseBody, buf[0])
+		}
 	}
 
 	return status, responseBody, nil
+}
+
+type customerAttributes struct {
+	Customer struct {
+		ID           string            `json:"id"`
+		Attributes   map[string]string `json:"attributes"`
+		Timestamps   map[string]int64  `json:"timestamps"`
+		Unsubscribed bool              `json:"unsubscribed"`
+		Devices      []interface{}     `json:"devices"`
+	} `json:"customer"`
 }
