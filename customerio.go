@@ -17,6 +17,7 @@ type CustomerIO struct {
 	siteID   string
 	apiKey   string
 	Host     string
+	HostAPI  string
 	HostBeta string
 	SSL      bool
 }
@@ -34,7 +35,7 @@ func (e *CustomerIOError) Error() string {
 
 // NewCustomerIO creates a new CustomerIO object to perform requests on the supplied credentials
 func NewCustomerIO(siteID, apiKey string) *CustomerIO {
-	return &CustomerIO{siteID, apiKey, "track.customer.io", "beta-api.customer.io", true}
+	return &CustomerIO{siteID, apiKey, "track.customer.io", "api.customer.io", "beta-api.customer.io", true}
 }
 
 // Identify identifies a customer and sets their attributes
@@ -204,6 +205,33 @@ func (c *CustomerIO) RemoveCustomersFromSegment(segmentID int, customerIDs []str
 	return nil
 }
 
+func (c *CustomerIO) CampaignTrigger(campaignID int, data map[string]interface{}) error {
+	if campaignID == 0 {
+		return errors.New("campaignID is a required field")
+	}
+
+	body := map[string]interface{}{"id": campaignID}
+	body["data"] = make(map[string]interface{})
+	for k, v := range data {
+		body["data"].(map[string]interface{})[k] = v
+	}
+	j, err := json.Marshal(body)
+
+	if err != nil {
+		return err
+	}
+
+	status, responseBody, err := c.request("POST", c.campaignTriggerURL(campaignID), j)
+
+	if err != nil {
+		return err
+	} else if status != 200 {
+		return &CustomerIOError{status, c.campaignTriggerURL(campaignID), responseBody}
+	}
+
+	return nil
+}
+
 func (c *CustomerIO) BetaCustomerAttributes(customerID string) (map[string]string, error) {
 	var data customerAttributes
 
@@ -259,6 +287,10 @@ func (c *CustomerIO) addCustomersToManualSegmentURL(segmentID int) string {
 
 func (c *CustomerIO) removeCustomersFromManualSegmentURL(segmentID int) string {
 	return c.protocol() + path.Join(c.Host, "api/v1/", "segments", strconv.Itoa(segmentID), "remove_customers")
+}
+
+func (c *CustomerIO) campaignTriggerURL(campaignID int) string {
+	return c.protocol() + path.Join(c.HostAPI, "v1/api/", "campaigns", strconv.Itoa(campaignID), "triggers")
 }
 
 func (c *CustomerIO) customerAttributesURL(customerID string) string {
