@@ -212,7 +212,7 @@ func (c *CustomerIO) RemoveCustomersFromSegment(segmentID int, customerIDs []str
 	return nil
 }
 
-func (c *CustomerIO) CampaignTrigger(campaignID int, data map[string]interface{}) error {
+func (c *CustomerIO) CampaignTrigger(campaignID int, data, recipients map[string]interface{}) error {
 	if campaignID == 0 {
 		return errors.New("campaignID is a required field")
 	}
@@ -221,6 +221,10 @@ func (c *CustomerIO) CampaignTrigger(campaignID int, data map[string]interface{}
 	body["data"] = make(map[string]interface{})
 	for k, v := range data {
 		body["data"].(map[string]interface{})[k] = v
+	}
+	body["recipients"] = make(map[string]interface{})
+	for k, v := range recipients {
+		body["recipients"].(map[string]interface{})[k] = v
 	}
 	j, err := json.Marshal(body)
 
