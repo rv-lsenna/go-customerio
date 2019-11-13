@@ -243,6 +243,24 @@ func (c *CustomerIO) CampaignTrigger(campaignID int, data, recipients map[string
 	return nil
 }
 
+func (c *CustomerIO) BetaCustomers(email string) ([]map[string]string, error) {
+	var data customers
+
+	status, responseBody, err := c.request("GET", c.customersURL(email), []byte{})
+	if err != nil {
+		return nil, err
+	} else if status != 200 {
+		return nil, &CustomerIOError{status, c.customersURL(email), responseBody}
+	}
+
+	err = json.Unmarshal(responseBody, &data)
+	if err != nil {
+		return nil, err
+	}
+
+	return data.Results, nil
+}
+
 func (c *CustomerIO) BetaCustomerAttributes(customerID string) (map[string]string, error) {
 	var data customerAttributes
 
@@ -304,6 +322,10 @@ func (c *CustomerIO) campaignTriggerURL(campaignID int) string {
 	return c.protocol() + path.Join(c.HostAPI, "v1/api/", "campaigns", strconv.Itoa(campaignID), "triggers")
 }
 
+func (c *CustomerIO) customersURL(email string) string {
+	return c.protocol() + path.Join(c.HostBeta, "v1/api/", "customers?email=", email)
+}
+
 func (c *CustomerIO) customerAttributesURL(customerID string) string {
 	return c.protocol() + path.Join(c.HostBeta, "v1/api/", "customers", customerID, "attributes")
 }
@@ -344,6 +366,10 @@ func (c *CustomerIO) request(method, url string, body []byte) (status int, respo
 	}
 
 	return status, responseBody, nil
+}
+
+type customers struct {
+	Results []map[string]string `json:"results"`
 }
 
 type customerAttributes struct {
